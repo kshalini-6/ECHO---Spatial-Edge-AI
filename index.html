@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ECHO - Spatial Memory</title>
+<style>
+  /* Reset box model so padding/border don't affect declared widths */
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #0d0f14;      /* app background - dark theme to match a typical desk/monitoring UI */
+    color: #e6e6e6;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* Top title bar */
+  header { padding: 20px 30px; border-bottom: 1px solid #232733; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: #7a8296; font-size: 13px; }
+
+  /* Two-column layout: Live Feed panel + Ask ECHO panel, wraps on small screens */
+  .layout {
+    display: flex;
+    gap: 24px;
+    padding: 24px 30px;
+    flex-wrap: wrap;
+  }
+
+  /* Shared card style for both panels */
+  .panel {
+    background: #12151c;
+    border: 1px solid #232733;
+    border-radius: 10px;
+    padding: 18px;
+  }
+
+  .cam-panel { flex: 1; min-width: 340px; }
+  .cam-panel img { width: 100%; border-radius: 6px; display: block; } /* live camera stream from /camera */
+
+  .ask-panel { flex: 1; min-width: 340px; }
+
+  .panel h2 {
+    margin: 0 0 14px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #9aa3b8;
+  }
+
+  /* Question input + Ask button, side by side */
+  .ask-row { display: flex; gap: 8px; }
+  input {
+    flex: 1;
+    padding: 10px 12px;
+    background: #0d0f14;
+    border: 1px solid #232733;
+    border-radius: 6px;
+    color: #e6e6e6;
+    font-size: 14px;
+  }
+  input:focus { outline: none; border-color: #3ddc84; } /* green accent on focus */
+
+  button {
+    padding: 10px 18px;
+    background: #3ddc84;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #34c974; }
+
+  /* Result card - hidden by default, shown via .show class once an answer arrives */
+  .answer-card {
+    margin-top: 18px;
+    background: #0d0f14;
+    border: 1px solid #232733;
+    border-radius: 8px;
+    padding: 16px;
+    display: none;
+  }
+  .answer-card.show { display: block; }
+
+  .answer-title {
+    font-size: 16px;
+    font-weight: 600;
+    text-transform: capitalize;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Status dot: green + glow when the object is currently visible, gray otherwise */
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+  .dot.on  { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+  .dot.off { background: #4a4f5e; }
+
+  /* Status / First seen / Last seen rows inside the result card */
+  .field-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-top: 1px solid #1a1d26;
+    font-size: 13px;
+  }
+  .field-label { color: #7a8296; }
+  .field-value { color: #e6e6e6; text-align: right; }
+  .field-value .zone-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    background: #1a2b22;
+    color: #3ddc84;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+
+  /* Shown instead of the result card when the asked object has no logged events */
+  .not-found { color: #e06868; font-size: 14px; margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ECHO - Spatial Memory</h1>
+  <p>Live object tracking - Desk & Drawer</p>
+</header>
+
+<div class="layout">
+
+  <!-- Left panel: live MJPEG/streamed camera feed served by the WebUI brick at /camera -->
+  <div class="panel cam-panel">
+    <h2>Live Feed</h2>
+    <img src="/camera">
+  </div>
+
+  <!-- Right panel: natural-language query box + result card -->
+  <div class="panel ask-panel">
+    <h2>Ask ECHO</h2>
+
+    <div class="ask-row">
+      <input id="question" type="text" placeholder="e.g. where is my remote?"
+             onkeydown="if(event.key==='Enter') ask()">
+      <button onclick="ask()">Ask</button>
+    </div>
+
+    <!-- Populated by ask() when an object is found in the database -->
+    <div id="answer-card" class="answer-card">
+      <div class="answer-title">
+        <span id="status-dot" class="dot off"></span>
+        <span id="obj-name"></span>
+      </div>
+
+      <div class="field-row">
+        <span class="field-label">Status</span>
+        <span class="field-value" id="obj-status"></span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">First seen</span>
+        <span class="field-value" id="obj-first"></span>
+      </div>
+      <div class="field-row">
+        <span class="field-label">Last seen</span>
+        <span class="field-value" id="obj-last"></span>
+      </div>
+    </div>
+
+    <!-- Shown instead of answer-card when the backend reports found: false -->
+    <div id="not-found" class="not-found" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+// Formats an ISO timestamp from the backend into a short, readable local time,
+// e.g. "Sep 13, 03:18:21 AM". Returns an em dash if no timestamp is given.
+function formatTime(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+}
+
+// Sends the typed question to the /ask endpoint (handled by answer_question()
+// in main.py) and renders either the result card or a "not found" message.
+async function ask() {
+  const question = document.getElementById("question").value;
+  if (!question.trim()) return;
+
+  const res = await fetch("/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question })
+  });
+  const data = await res.json();
+
+  const card = document.getElementById("answer-card");
+  const notFound = document.getElementById("not-found");
+
+  // No matching object has ever been logged - show the "not found" message instead
+  if (!data.found) {
+    card.classList.remove("show");
+    notFound.style.display = "block";
+    notFound.innerText = data.message;
+    return;
+  }
+
+  // Object was found - hide the "not found" message and populate the result card
+  notFound.style.display = "none";
+  card.classList.add("show");
+
+  document.getElementById("obj-name").innerText = data.object;
+
+  // Green glowing dot if currently visible, gray otherwise
+  document.getElementById("status-dot").className = "dot " + (data.currently_visible ? "on" : "off");
+
+  // "Visible now" / "Not visible", with the current zone shown as a small tag
+  document.getElementById("obj-status").innerHTML =
+    (data.currently_visible ? "Visible now" : "Not visible") +
+    (data.current_zone ? `<span class="zone-tag">${data.current_zone}</span>` : "");
+
+  // Earliest "appeared" event ever logged for this object
+  document.getElementById("obj-first").innerHTML =
+    formatTime(data.first_seen) +
+    (data.first_seen_zone ? `<span class="zone-tag">${data.first_seen_zone}</span>` : "");
+
+  // Most recent event of any type for this object
+  document.getElementById("obj-last").innerHTML =
+    formatTime(data.last_seen) +
+    (data.last_seen_zone ? `<span class="zone-tag">${data.last_seen_zone}</span>` : "");
+}
+</script>
+
+</body>
+</html>
