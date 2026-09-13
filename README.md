@@ -1,2 +1,32 @@
-# ECHO---Spatial-Edge-AI
-Edge-AI object tracking on Arduino UNO Q - detects objects moving between Desk and Drawer zones and answers natural-language "where is my X" queries. Runs entirely on-device, no cloud, no recorded video.
+# ECHO — Spatial Edge AI
+
+ECHO gives a physical space a memory. Running entirely on the Arduino UNO Q with Arduino App Lab, it watches two zones — a Desk and a Drawer — and tracks objects moving between them using on-device AI. Ask ECHO where something is, and it tells you the last zone it was seen in.
+
+No cloud. No recorded video. Everything runs locally on the board.
+
+## How It Works
+
+- **VideoObjectDetection brick** — runs a built-in COCO-pretrained model on the camera feed, detecting objects on-device.
+- **Zone tracking** — checks each detected object's position against two defined zones (Desk, Drawer) using confirm/missing timers to filter out false triggers.
+- **Event logging** — every appearance/disappearance is written to a local SQLite database (`events.db`) as a structured event: object, event type, zone, confidence, timestamp. No images or video frames are ever stored.
+- **WebUI brick** — serves a live camera feed and an "Ask ECHO" panel where you can type a question like *"Where's my charger?"* and get back the object's current visibility and last known zone.
+
+## Files
+
+- `main.py` — core application logic: detection callback, zone lookup, event logging, disappearance monitor, and the `/ask` query endpoint.
+- `index.html` — WebUI frontend: live feed display and the "Ask ECHO" query interface.
+- `app.yaml` — App Lab manifest declaring the app and its bricks (Web UI + Video Object Detection).
+
+## Hardware Used
+
+- Arduino UNO Q
+- Arduino USB-C Hub
+- USB webcam (HD 1080p)
+
+## Limitations
+
+Currently limited to two zones (Desk, Drawer) due to on-device processing constraints. The COCO-pretrained model can occasionally register inconsistent detections; confirm/missing timers help reduce false positives but don't eliminate them entirely.
+
+## Built For
+
+Arduino UNO Q & App Lab Challenge — Home Automation category.
