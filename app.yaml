@@ -1,0 +1,23 @@
+# App Lab manifest for ECHO — Spatial Memory
+# Defines the app's identity and which Bricks it uses.
+
+# Display name shown in App Lab / Hackster listings
+name: ECHO - Spatial Memory
+
+# Short description of what the app does
+description: Tracks objects moving between Desk and Drawer zones using on-device
+  object detection, logs zone-change events locally, and answers natural-language
+  "where is my X" queries through a Web UI - no cloud, no recorded video.
+
+# No custom network ports needed beyond what the bricks expose themselves
+ports: []
+
+# Bricks used by this app:
+bricks:
+  # Serves the web interface: live camera feed + "Ask ECHO" query panel
+  - arduino:web_ui: {}
+  # Runs the on-device COCO-pretrained object detection model on the camera feed
+  - arduino:video_object_detection: {}
+
+# Optional custom icon for the app (none set)
+icon:
